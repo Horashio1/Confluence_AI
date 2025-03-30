@@ -4,11 +4,21 @@ import ast
 import os
 
 #Global variables
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-pinecone = Pinecone(api_key=PINECONE_API_KEY)
+pinecone = None
+
+def initialize_pinecone_client():
+    """Initialize the Pinecone client with API key."""
+    global pinecone
+    api_key = os.getenv("PINECONE_API_KEY")
+    if not api_key:
+        raise ValueError("PINECONE_API_KEY environment variable is not set")
+    pinecone = Pinecone(api_key=api_key)
+    return pinecone
 
 # delete index
 def delete_pinecone_index(index_name):
+    if pinecone is None:
+        initialize_pinecone_client()
     print(f"Deleting index '{index_name}' if it exists.")
     try:
         pinecone.delete_index(index_name)
@@ -21,6 +31,11 @@ def delete_pinecone_index(index_name):
 def get_pinecone_index(index_name):
     print(f"Checking if index {index_name} exists.")
     index_created = False
+    
+    # Ensure Pinecone client is initialized
+    if pinecone is None:
+        initialize_pinecone_client()
+        
     if index_name in [index.name for index in pinecone.list_indexes()]:
         print(f"Index {index_name} already exists, good to go.")
         index = pinecone.Index(index_name)
@@ -31,7 +46,7 @@ def get_pinecone_index(index_name):
             name=index_name, 
             dimension=1536, 
             metric='cosine', 
-            spec=ServerlessSpec(cloud='aws', region='us-west-2'))
+            spec=ServerlessSpec(cloud='aws', region='us-east-1'))
             
         print(f"Index {index_name} created.")
 

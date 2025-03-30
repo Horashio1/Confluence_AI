@@ -319,7 +319,7 @@ def main():
     #Fetch pages on limit occurance
     all_pages = []
     start = 0
-    limit = 200
+    limit = 5
     csv_file = './conf_data.csv'
     
     print("\nStarting main process...")

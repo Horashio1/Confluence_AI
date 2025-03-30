@@ -144,7 +144,7 @@ demo = gr.Interface(
     fn=main,
     inputs=[gr.Textbox(label="Hello, my name is Aiden, your customer service assistant, how can i help?", lines=1, placeholder="")],
     outputs=[gr.Markdown(label="response")],
-    title="Confluence Knowledge Base Chatbot",
+    title="Customer Service Assistant",
     description="A question and answering chatbot that answers questions based on your confluence knowledge base. Note: anything that was tagged internal_only has been removed",
     allow_flagging="never"
 )

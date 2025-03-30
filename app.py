@@ -1,21 +1,25 @@
 import os
+import sys
 import pandas as pd
 from dotenv import load_dotenv, find_dotenv
+from flask import Flask, request, jsonify
 import gradio as gr
-from utils.openai_logic import get_embeddings, create_prompt, add_prompt_messages, get_chat_completion_messages, create_system_prompt
-import sys
 from typing import Optional
 
-# load environment variables
+# Import your custom functions from your utils
+from utils.openai_logic import (
+    get_embeddings, create_prompt, add_prompt_messages,
+    get_chat_completion_messages, create_system_prompt
+)
+from utils.pinecone_logic import delete_pinecone_index, get_pinecone_index, upsert_data
+from utils.data_prep import import_csv, clean_data_pinecone_schema, generate_embeddings_and_add_to_df
+
+# Load environment variables
 env_path = find_dotenv()
 print(f"Loading .env file from: {env_path}")
 load_dotenv(env_path)
 print(f"PINECONE_API_KEY loaded: {'PINECONE_API_KEY' in os.environ}")
-print(f"PINECONE_API_KEY value: {os.getenv('PINECONE_API_KEY')[:10]}...")  # Only print first 10 chars for security
-
-# Import Pinecone utilities after environment variables are loaded
-from utils.pinecone_logic import delete_pinecone_index, get_pinecone_index, upsert_data
-from utils.data_prep import import_csv, clean_data_pinecone_schema, generate_embeddings_and_add_to_df
+print(f"PINECONE_API_KEY value: {os.getenv('PINECONE_API_KEY')[:10]}...")  # For security
 
 # Configuration
 MODEL_FOR_OPENAI_EMBEDDING = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
@@ -69,7 +73,7 @@ def extract_info(data):
         confluence_base_url = os.getenv('CONFLUENCE_BASE_URL', 'https://pickme.atlassian.net/wiki')
         for match in data['matches']:
             page_id = match['metadata'].get('page_id')
-            title = match['metadata'].get('title', 'No title')  # Get title from metadata
+            title = match['metadata'].get('title', 'No title')
             score = match['score']
             
             if page_id:
@@ -118,34 +122,50 @@ def main(query: str) -> Optional[str]:
         print(f"Error in main function: {str(e)}")
         return f"An error occurred: {str(e)}"
 
-if __name__ == "__main__":
-    main("What is your contact information?")
+# --- Google Chat Webhook Integration using Flask ---
+app = Flask(__name__)
 
-# Gradio interface
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    """
+    Google Chat sends events to this endpoint.
+    If the message text starts with "Q:", process it as a query.
+    """
+    event = request.get_json()
+    print("Received event:", event)
+    if "message" in event and "text" in event["message"]:
+        incoming_text = event["message"]["text"]
+        if incoming_text.strip().startswith("Q:"):
+            # Remove the "Q:" prefix and extra whitespace
+            query = incoming_text.strip()[2:].strip()
+            response_text = main(query)
+            # Return the response in the format Google Chat expects
+            return jsonify({"text": response_text})
+        else:
+            return jsonify({"text": "Please start your message with 'Q:' to ask a question."})
+    else:
+        return jsonify({"text": "Invalid message format."}), 400
+
+# --- Optional: Gradio Interface for POC Testing ---
 def create_gradio_interface():
     gr.close_all()
     demo = gr.Interface(
         fn=main,
-        inputs=[gr.Textbox(label="Hello, my name is Aiden, your customer service assistant, how can i help?", lines=1, placeholder="")],
-        outputs=[gr.Markdown(label="response")],
+        inputs=[gr.Textbox(label="Ask your question:", lines=1, placeholder="Type your query here...")],
+        outputs=[gr.Markdown(label="Response")],
         title="Confluence Knowledge Base Chatbot",
-        description="A question and answering chatbot that answers questions based on your confluence knowledge base. Note: anything that was tagged internal_only has been removed",
+        description=("A chatbot that answers questions based on your Confluence knowledge base. "
+                     "For Google Chat, prefix your query with 'Q:'"),
         allow_flagging="never"
     )
     return demo
 
-if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "--gradio":
-    demo = create_gradio_interface()
-    demo.launch(server_name="localhost", server_port=8888)    
-
-#create Gradio interface for the chatbot
-gr.close_all()
-demo = gr.Interface(
-    fn=main,
-    inputs=[gr.Textbox(label="Hello, my name is Aiden, your customer service assistant, how can i help?", lines=1, placeholder="")],
-    outputs=[gr.Markdown(label="response")],
-    title="Confluence Knowledge Base Chatbot",
-    description="A question and answering chatbot that answers questions based on your confluence knowledge base. Note: anything that was tagged internal_only has been removed",
-    allow_flagging="never"
-)
-demo.launch(server_name="localhost", server_port=8888)  
+if __name__ == "__main__":
+    # Run Gradio if "--gradio" flag is provided; otherwise run the Flask webhook server.
+    if len(sys.argv) > 1 and sys.argv[1] == "--gradio":
+        demo = create_gradio_interface()
+        demo.launch(server_name="localhost", server_port=8888)
+    else:
+        port = int(os.environ.get("PORT", 8080))
+        print(f"Starting Flask server on port {port}")
+        app.run(host="0.0.0.0", port=port)

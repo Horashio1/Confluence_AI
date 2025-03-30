@@ -13,10 +13,15 @@ import json
 import numpy as np
 import gradio as gr
 
-#Global variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+# Load environment variables
+env_path = find_dotenv()
+load_dotenv(env_path)
 
+# Global variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not found in environment variables")
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # get embeddings
 def get_embeddings(query, model_emb):

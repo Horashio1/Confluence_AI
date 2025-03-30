@@ -65,7 +65,7 @@ def clean_data_pinecone_schema(df):
     return df
 
 
-def chunk_text(text, max_chunk_size=6000):
+def chunk_text(text, max_chunk_size=8000):
     """Split text into chunks while preserving sentence boundaries."""
     # Split into sentences (rough approximation)
     sentences = text.split('. ')
@@ -74,33 +74,14 @@ def chunk_text(text, max_chunk_size=6000):
     current_size = 0
     
     for sentence in sentences:
-        # More conservative token estimation (1 token ≈ 3 chars)
-        sentence_size = len(sentence) // 3
+        # Rough estimation of tokens (1 token ≈ 4 chars)
+        sentence_size = len(sentence) // 4
         
         if current_size + sentence_size > max_chunk_size:
             if current_chunk:
                 chunks.append('. '.join(current_chunk) + '.')
-            # If a single sentence is too large, split it into smaller pieces
-            if sentence_size > max_chunk_size:
-                # Split long sentence into words and create smaller chunks
-                words = sentence.split()
-                temp_chunk = []
-                temp_size = 0
-                for word in words:
-                    word_size = len(word) // 3
-                    if temp_size + word_size > max_chunk_size:
-                        if temp_chunk:
-                            chunks.append(' '.join(temp_chunk))
-                        temp_chunk = [word]
-                        temp_size = word_size
-                    else:
-                        temp_chunk.append(word)
-                        temp_size += word_size
-                if temp_chunk:
-                    chunks.append(' '.join(temp_chunk))
-            else:
-                current_chunk = [sentence]
-                current_size = sentence_size
+            current_chunk = [sentence]
+            current_size = sentence_size
         else:
             current_chunk.append(sentence)
             current_size += sentence_size
