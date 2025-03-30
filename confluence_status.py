@@ -8,9 +8,9 @@ import os
 # -------------------------------
 CONFLUENCE_DOMAIN = "pickme.atlassian.net"  # e.g. "pickme.atlassian.net"
 EMAIL = "haresha.perera@pickme.lk"          # Atlassian/Confluence user
+API_TOKEN = os.getenv("CONF_API_KEY")
 API_TOKEN = os.getenv("CONF_API_KEY")  # from id.atlassian.com/manage/api-tokens
 SPACE_KEY = "BDDS"                          # e.g. "ENG", "DOC", "DSA"
-
 BASE_URL = f"https://{CONFLUENCE_DOMAIN}/wiki/rest/api"
 AUTH = HTTPBasicAuth(EMAIL, API_TOKEN)
 
