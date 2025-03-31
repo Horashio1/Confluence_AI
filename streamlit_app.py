@@ -1,3 +1,4 @@
+import streamlit as st
 import os
 import sys
 import pandas as pd
@@ -128,9 +129,21 @@ def webhook():
     else:
         return jsonify({"text": "Invalid message format."}), 400
 
+# --- Streamlit Interface ---
+def streamlit_app():
+    st.title("Confluence Knowledge Base Chatbot")
+    st.write("A chatbot that answers questions based on your Confluence knowledge base.")
+    
+    query = st.text_input("Ask your question:", placeholder="Type your query here...")
+    
+    if st.button("Get Answer") or query:
+        if query:
+            with st.spinner("Generating response..."):
+                response = main(query)
+                st.markdown(response)
+
 # --- Gradio Interface ---
 def create_gradio_interface():
-    gr.close_all()
     demo = gr.Interface(
         fn=main,
         inputs=[gr.Textbox(label="Ask your question:", lines=1, placeholder="Type your query here...")],
@@ -142,24 +155,68 @@ def create_gradio_interface():
     )
     return demo
 
-# --- Mounting Gradio as the Default App with Flask Webhook on /webhook ---
 if __name__ == "__main__":
-    # Create the Gradio interface WSGI app
-    gradio_app = create_gradio_interface().app  # This is a WSGI app
-
-    # Mount the Gradio interface as the default (root) app
-    # Mount the Flask webhook app under /webhook so it's still accessible.
-    from werkzeug.middleware.dispatcher import DispatcherMiddleware
-    application = DispatcherMiddleware(gradio_app, {"/webhook": flask_app})
-
-    # Use Waitress to serve the combined app (install via `pip install waitress`)
-    try:
-        from waitress import serve
-        port = int(os.environ.get("PORT", 8080))
-        print(f"Starting combined app (Gradio at root, Flask at /webhook) on port {port}")
-        serve(application, host="0.0.0.0", port=port)
-    except ImportError:
-        # Fallback to Flask's built-in server for development purposes only
-        port = int(os.environ.get("PORT", 8080))
-        print(f"Starting Flask app on port {port}")
-        gradio_app.run(host="0.0.0.0", port=port)
+    # Check if running in Streamlit environment
+    if 'STREAMLIT_SCRIPT_PATH' in os.environ:
+        streamlit_app()
+    else:
+        # Command line argument to determine which interface to use
+        if len(sys.argv) > 1:
+            if sys.argv[1] == "--gradio":
+                # Run Gradio interface
+                demo = create_gradio_interface()
+                demo.launch(server_name="0.0.0.0", server_port=8080)
+            elif sys.argv[1] == "--flask":
+                # Run Flask webhook server only
+                port = int(os.environ.get("PORT", 8080))
+                print(f"Starting Flask webhook server on port {port}")
+                flask_app.run(host="0.0.0.0", port=port)
+            elif sys.argv[1] == "--combined":
+                # Run combined Gradio + Flask using WSGI middleware
+                try:
+                    # First check if waitress is installed
+                    import importlib.util
+                    if importlib.util.find_spec("waitress") is not None:
+                        from waitress import serve
+                        from werkzeug.middleware.dispatcher import DispatcherMiddleware
+                        
+                        # Create Gradio app
+                        gradio_app = create_gradio_interface()
+                        
+                        # Combine with Flask app
+                        application = DispatcherMiddleware(gradio_app.app, {"/webhook": flask_app})
+                        
+                        # Serve with waitress
+                        port = int(os.environ.get("PORT", 8080))
+                        print(f"Starting combined app (Gradio at root, Flask at /webhook) on port {port}")
+                        serve(application, host="0.0.0.0", port=port)
+                    else:
+                        raise ImportError("waitress module not found")
+                except ImportError:
+                    print("Waitress not installed. Please install with: pip install waitress")
+                    print("Falling back to Gradio's built-in server...")
+                    # Use Gradio's built-in server and custom route for webhook
+                    demo = create_gradio_interface()
+                    
+                    # Mount Flask app into Gradio
+                    app = demo.app
+                    
+                    # Add webhook route to the FastAPI app that's backing Gradio
+                    @app.post("/webhook")
+                    async def fastapi_webhook(request: dict):
+                        if "message" in request and "text" in request["message"]:
+                            incoming_text = request["message"]["text"]
+                            if incoming_text.strip().startswith("Q:"):
+                                query = incoming_text.strip()[2:].strip()
+                                response_text = main(query)
+                                return {"text": response_text}
+                            else:
+                                return {"text": "Please start your message with 'Q:' to ask a question."}
+                        else:
+                            return {"text": "Invalid message format."}, 400
+                    
+                    # Launch with the webhook route added
+                    demo.launch(server_name="0.0.0.0", server_port=8080)
+        else:
+            # Default to Streamlit
+            streamlit_app()
