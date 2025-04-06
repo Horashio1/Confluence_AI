@@ -17,10 +17,8 @@ if not confluence_domain.startswith(('http://', 'https://')):
     confluence_domain = f'https://{confluence_domain}'
 
 # Set your Confluence details here
-space_key = 'BC'  # Big data and data science space
-# BC - Product Development space
-# BDDS - Big Data and Data Science
-
+space_key = 'BDDS'  # Big data and data science space
+# 'BC' # Product Development space
 
 # Function to fetch pages from Confluence
 def fetch_pages(start, limit):
@@ -215,23 +213,12 @@ def fetch_all_pages(all_pages, start, limit, max_chunk_size=200):
     print(f"Max chunk size: {max_chunk_size}")
     print(f"Current all_pages length: {len(all_pages)}")
 
-    # Get the total number of pages in the space first for verification
-    first_response = fetch_pages(0, 1)
-    total_space_pages = 0
-    if first_response:
-        total_space_pages = first_response.get('size', 0)
-        print(f"\n*** IMPORTANT: Total pages available in space {space_key}: {total_space_pages} ***")
-        if total_space_pages < limit:
-            print(f"Note: You requested {limit} pages but there are only {total_space_pages} pages available in this space.")
-            print("The script will fetch all available pages.")
-
     # Calculate the total number of chunks to fetch based on the limit and max_chunk_size
     total_chunks = (limit + max_chunk_size - 1) // max_chunk_size
     print(f"Total chunks to fetch: {total_chunks}")
 
-    # Initialize the tqdm progress bar with the smaller of limit or total pages
-    pages_to_fetch = min(limit, total_space_pages) if total_space_pages > 0 else limit
-    with tqdm(total=pages_to_fetch, desc="Fetching pages") as pbar:
+    # Initialize the tqdm progress bar
+    with tqdm(total=limit, desc="Fetching pages") as pbar:
         while True:
             chunk_size = min(limit, max_chunk_size)  # Determine the size of the next chunk
             print(f"\nFetching chunk of size: {chunk_size}")
@@ -245,7 +232,7 @@ def fetch_all_pages(all_pages, start, limit, max_chunk_size=200):
                     fetched_count = len(results)
                     pbar.update(fetched_count)
                     if fetched_count < chunk_size:
-                        print("Breaking loop: fetched count less than chunk size (reached end of available pages)")
+                        print("Breaking loop: fetched count less than chunk size")
                         break
                     start += fetched_count
                     limit -= fetched_count
@@ -271,10 +258,6 @@ def delete_internal_only_records(df):
         print("Error: The variable 'df' must be a pandas DataFrame.")
         return df
     
-    # Add logging for the initial dataframe size
-    initial_size = df.shape[0]
-    print(f"Initial DataFrame size before filtering internal records: {initial_size}")
-    
     # Loop through the DataFrame with a tqdm progress bar
     if 'is_internal' in df.columns:
         for page_id, row in tqdm(df.iterrows(), total=df.shape[0], desc="Updating is_internal status"):
@@ -288,17 +271,8 @@ def delete_internal_only_records(df):
         print("Error: 'is_internal' column not found in the DataFrame.")
         return df
     
-    # Log how many internal pages were found
-    internal_count = df[df['is_internal'] == True].shape[0]
-    print(f"Found {internal_count} internal pages that will be filtered out")
-    
     # Delete internal_only records
     df = df[df['is_internal'] != True]
-    
-    # Log final size
-    final_size = df.shape[0]
-    print(f"Final DataFrame size after filtering: {final_size}")
-    print(f"Removed {initial_size - final_size} internal pages")
 
     return df
 
@@ -309,12 +283,8 @@ def add_content_to_dataframe(df):
         print("Error: The variable 'df' must be a pandas DataFrame.")
         return df
 
-    # Count how many pages have content initially
-    content_before = df['content'].notna().sum()
-    print(f"Pages with content before processing: {content_before}")
-
     # Wrap the loop in tqdm for progress tracking
-    for page_id, row in tqdm(df.iterrows(), total=df.shape[0], desc="Updating DataFrame with content"):
+    for page_id, row in tqdm(df.iterrows(), total=df.shape[0], desc="Updating DataFrame"):
         print(f"\nProcessing page ID: {page_id}")  # Debug logging
         html_content = fetch_page_content(page_id)
 
@@ -345,12 +315,8 @@ def add_content_to_dataframe(df):
         else:
             print(f"Warning: Could not fetch content for page ID {page_id}.")
 
-    # Count how many pages have content after processing
-    content_after = df['content'].notna().sum()
-    print(f"Pages with content after processing: {content_after}")
-    print(f"Added content to {content_after - content_before} pages")
-
     return df
+
 
 
 def save_dataframe_to_csv(df, filename):
@@ -359,19 +325,7 @@ def save_dataframe_to_csv(df, filename):
     else:
         try:
             df.to_csv(filename, index=True)
-            print(f"Data successfully saved - {len(df)} records written to {filename}")
-            
-            # Additional information about the saved data
-            print("\nSummary of saved data:")
-            print(f"Total rows: {df.shape[0]}")
-            print(f"Total columns: {df.shape[1]}")
-            print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
-            
-            # Check for any missing content
-            missing_content = df['content'].isna().sum()
-            if missing_content > 0:
-                print(f"Warning: {missing_content} pages ({missing_content/len(df)*100:.1f}%) have missing content")
-                
+            print("Data successfully saved " + str(len(df)) + " records to " + filename)
         except Exception as e:
             print(f"An error occurred while saving the DataFrame to CSV: {e}")
 
@@ -379,42 +333,30 @@ def main():
     # Fetch pages on limit occurance
     all_pages = []
     start = 0
-    limit = 2000
+    limit = 20
     csv_file = './conf_data.csv'
     
-    print("\n======== STARTING CONFLUENCE SCRAPER ========")
+    print("\nStarting main process...")
     print(f"Confluence domain: {confluence_domain}")
     print(f"Space key: {space_key}")
     print(f"Environment variables loaded: {bool(confluence_domain and api_key)}")
-    print(f"Target number of pages: {limit}")
-    print("=============================================")
     
-    print("\nStep 1: Fetching pages...")
+    print("\nFetching pages...")
     all_pages = fetch_all_pages(all_pages, start, limit)
     
     if all_pages is None:
         print("Error: Failed to fetch pages. Exiting...")
         return
         
-    print(f"\nStep 2: Processing {len(all_pages)} fetched pages...")
+    print(f"Total pages fetched: {len(all_pages)}")
     df = create_dataframe()
     df = add_all_pages_to_dataframe(df, all_pages)
     df = set_index_of_dataframe(df)
-    
-    print("\nStep 3: Filtering out internal-only pages...")
     df = delete_internal_only_records(df)
-    
-    print("\nStep 4: Adding content to DataFrame...")
+    print("Removed " + str(limit - len(df)) + " internal_only records")
+    print("Adding content to DataFrame...")
     df = add_content_to_dataframe(df)
-    
-    print("\nStep 5: Saving data to CSV...")
     save_dataframe_to_csv(df, csv_file)
-    
-    print("\n======== CONFLUENCE SCRAPER COMPLETE ========")
-    print(f"Started with request for {limit} pages")
-    print(f"Found and processed {len(all_pages)} pages")
-    print(f"Final dataset contains {len(df)} pages after filtering")
-    print("==============================================")
 
 
 if __name__ == "__main__":

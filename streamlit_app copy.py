@@ -6,7 +6,6 @@ from dotenv import load_dotenv, find_dotenv
 from flask import Flask, request, jsonify
 import gradio as gr
 from typing import Optional
-import pinecone  # Added for interacting with Pinecone indexes
 
 # Import your custom functions from your utils
 from utils.openai_logic import (
@@ -26,13 +25,8 @@ print(f"PINECONE_API_KEY value: {os.getenv('PINECONE_API_KEY')[:10]}...")  # For
 # Configuration
 MODEL_FOR_OPENAI_EMBEDDING = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 MODEL_FOR_OPENAI_CHAT = os.getenv("OPENAI_CHAT_MODEL", "gpt-3.5-turbo-0125")
-# Default index (will be overridden by the dropdown selection in the Streamlit UI)
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "test1")
 CSV_FILE = os.getenv("CSV_FILE_PATH", "./conf_data.csv")
-
-# Username and Password for Streamlit (set these in your .env file)
-STREAMLIT_USERNAME = os.getenv("STREAMLIT_USERNAME")
-STREAMLIT_PASSWORD = os.getenv("STREAMLIT_PASSWORD")
 
 # Global variables
 index = None
@@ -137,41 +131,13 @@ def webhook():
 
 # --- Streamlit Interface ---
 def streamlit_app():
-    # --- Login Section ---
-    if "logged_in" not in st.session_state:
-        st.session_state["logged_in"] = False
-
-    if not st.session_state["logged_in"]:
-        st.title("Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
-            if username == STREAMLIT_USERNAME and password == STREAMLIT_PASSWORD:
-                st.session_state["logged_in"] = True
-            else:
-                st.error("Incorrect username or password")
-        st.stop()
-
     st.title("Confluence Knowledge Base Chatbot")
     st.write("A chatbot that answers questions based on your Confluence knowledge base.")
-
-    # --- Pinecone Index Dropdown ---
-    # Instantiate the Pinecone client using the new API
-    from pinecone import Pinecone
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    available_indexes = pc.list_indexes().names()  # Get the list of available index names
-    if not available_indexes:
-        st.error("No Pinecone indexes available")
-        st.stop()
-    selected_index = st.selectbox("Select Pinecone Index", available_indexes)
-
+    
     query = st.text_input("Ask your question:", placeholder="Type your query here...")
-
+    
     if st.button("Get Answer") or query:
         if query:
-            # Update the global INDEX_NAME with the user-selected index.
-            global INDEX_NAME
-            INDEX_NAME = selected_index
             with st.spinner("Generating response..."):
                 response = main(query)
                 st.markdown(response)
